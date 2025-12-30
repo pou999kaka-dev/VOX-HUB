@@ -1,0 +1,829 @@
+--// VOX SPEED HUB v7.0 + KEY SYSTEM (FINAL DEFINITIVE VERSION)
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local defaultSpeed = 16
+local savedSpeed = defaultSpeed
+local infJumpEnabled = false
+local noclipEnabled = false
+local espEnabled = false
+local savedPos = nil
+
+-- SISTEMA DE SALVAMENTO
+local HttpService = game:GetService("HttpService")
+local configFileName = "VoxHubConfig.json"
+
+local function saveConfig()
+    local config = {
+        speed = savedSpeed,
+        infJump = infJumpEnabled,
+        noclip = noclipEnabled,
+        esp = espEnabled
+    }
+    pcall(function()
+        if writefile then
+            writefile(configFileName, HttpService:JSONEncode(config))
+        end
+    end)
+end
+
+local function loadConfig()
+    pcall(function()
+        if isfile and isfile(configFileName) then
+            local data = readfile(configFileName)
+            local config = HttpService:JSONDecode(data)
+            savedSpeed = config.speed or defaultSpeed
+            infJumpEnabled = config.infJump or false
+            noclipEnabled = config.noclip or false
+            espEnabled = config.esp or false
+        end
+    end)
+end
+
+loadConfig()
+
+-- Múltiplas Keys permitidas
+local validKeys = {
+    ["VOX-2025"] = true,
+    ["Vox-2025"] = true,
+    ["vox-2025"] = true
+}
+
+local GREEN_COLOR = Color3.fromRGB(0, 255, 0)
+local RED_COLOR = Color3.fromRGB(255, 0, 0)
+local WHITE_COLOR = Color3.new(1, 1, 1)
+local BLUE_COLOR = Color3.fromRGB(0, 120, 255)
+
+-- Proteção contra múltiplos carregamentos
+if player.PlayerGui:FindFirstChild("VoxKey") then player.PlayerGui.VoxKey:Destroy() end
+if player.PlayerGui:FindFirstChild("VoxHub") then player.PlayerGui.VoxHub:Destroy() end
+
+-- FUNÇÃO DE ANIMAÇÃO GLOBAL (ESCALA ESTÁVEL + ONDA LENTA)
+local function animateClick(button)
+    if not button then return end
+    local originalSize = button.Size
+    local originalPos = button.Position
+    local anchor = button.AnchorPoint
+    
+    local shrinkSize = UDim2.new(originalSize.X.Scale, originalSize.X.Offset * 0.85, originalSize.Y.Scale, originalSize.Y.Offset * 0.85)
+    
+    local offsetX = (originalSize.X.Offset - shrinkSize.X.Offset) * (anchor.X - 0.5)
+    local offsetY = (originalSize.Y.Offset - shrinkSize.Y.Offset) * (anchor.Y - 0.5)
+    local shrinkPos = originalPos + UDim2.new(0, offsetX, 0, offsetY)
+    
+    local tInfo1 = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tInfo2 = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    
+    TweenService:Create(button, tInfo1, {Size = shrinkSize, Position = shrinkPos}):Play()
+    task.delay(0.15, function()
+        TweenService:Create(button, tInfo2, {Size = originalSize, Position = originalPos}):Play()
+    end)
+    
+    local ripple = Instance.new("Frame")
+    ripple.Name = "Ripple"
+    ripple.BackgroundColor3 = Color3.new(0,0,0)
+    ripple.BackgroundTransparency = 0.7
+    ripple.ZIndex = button.ZIndex + 1
+    ripple.AnchorPoint = Vector2.new(0.5, 0.5)
+    ripple.Position = UDim2.new(0.5, 0, 0.5, 0)
+    ripple.Size = UDim2.new(0, 0, 0, 0)
+    ripple.Parent = button
+    
+    local rCorner = Instance.new("UICorner")
+    rCorner.CornerRadius = UDim.new(1, 0)
+    rCorner.Parent = ripple
+    
+    button.ClipsDescendants = true
+    
+    local targetSize = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 2
+    TweenService:Create(ripple, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, targetSize, 0, targetSize),
+        BackgroundTransparency = 1
+    }):Play()
+    
+    game:GetService("Debris"):AddItem(ripple, 0.8)
+end
+
+-- KEY SYSTEM
+local blur = Instance.new("BlurEffect")
+blur.Size = 0
+blur.Parent = Lighting
+
+local keyGui = Instance.new("ScreenGui")
+keyGui.Name = "VoxKey"
+keyGui.ResetOnSpawn = false
+keyGui.Parent = player.PlayerGui
+
+local bg = Instance.new("Frame")
+bg.Name = "Background"
+bg.Size = UDim2.new(1,0,1,0)
+bg.BackgroundColor3 = Color3.new(0,0,0)
+bg.BackgroundTransparency = 1
+bg.Parent = keyGui
+
+local box = Instance.new("Frame")
+box.Name = "MainBox"
+box.Size = UDim2.new(0,320,0,240)
+box.Position = UDim2.new(0.5,0,0.5,0)
+box.AnchorPoint = Vector2.new(0.5,0.5)
+box.BackgroundColor3 = Color3.fromRGB(20,20,20)
+box.BackgroundTransparency = 1
+box.Parent = bg
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0,20)
+corner.Parent = box
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 3
+stroke.Transparency = 1
+stroke.Color = WHITE_COLOR
+stroke.Parent = box
+
+local grad = Instance.new("UIGradient")
+grad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.new(1,1,1)),
+    ColorSequenceKeypoint.new(0.5, Color3.new(0,0,0)),
+    ColorSequenceKeypoint.new(1, Color3.new(1,1,1))
+}
+grad.Parent = stroke
+
+local keyTitle = Instance.new("TextLabel")
+keyTitle.Size = UDim2.new(1,0,0,50)
+keyTitle.BackgroundTransparency = 1
+keyTitle.Text = ""
+keyTitle.Font = Enum.Font.GothamBlack
+keyTitle.TextSize = 24
+keyTitle.TextColor3 = WHITE_COLOR
+keyTitle.TextTransparency = 1
+keyTitle.Parent = box
+
+local keyBox = Instance.new("TextBox")
+keyBox.Size = UDim2.new(0.8,0,0,40)
+keyBox.Position = UDim2.new(0.1,0,0.35,0)
+keyBox.PlaceholderText = "Key:"
+keyBox.Focused:Connect(function() animateClick(keyBox) end)
+keyBox.Text = ""
+keyBox.Font = Enum.Font.Gotham
+keyBox.TextSize = 16
+keyBox.BackgroundColor3 = Color3.fromRGB(35,35,35)
+keyBox.TextColor3 = WHITE_COLOR
+keyBox.BorderSizePixel = 0
+keyBox.TextTransparency = 1
+keyBox.Parent = box
+
+local cornerBox = Instance.new("UICorner")
+cornerBox.CornerRadius = UDim.new(0,12)
+cornerBox.Parent = keyBox
+
+local confirm = Instance.new("TextButton")
+confirm.Size = UDim2.new(0.8,0,0,36)
+confirm.Position = UDim2.new(0.1,0,0.58,0)
+confirm.Text = "CONFIRMAR"
+confirm.Font = Enum.Font.GothamBold
+confirm.TextSize = 15
+confirm.TextColor3 = WHITE_COLOR
+confirm.BackgroundColor3 = Color3.fromRGB(40,40,40)
+confirm.BorderSizePixel = 0
+confirm.TextTransparency = 1
+confirm.Parent = box
+
+local cornerBtn = Instance.new("UICorner")
+cornerBtn.CornerRadius = UDim.new(0,12)
+cornerBtn.Parent = confirm
+
+local getLink = Instance.new("TextButton")
+getLink.Size = UDim2.new(0.8,0,0,36)
+getLink.Position = UDim2.new(0.1,0,0.78,0)
+getLink.Text = "IR PARA KEY"
+getLink.Font = Enum.Font.GothamBold
+getLink.TextSize = 15
+getLink.TextColor3 = WHITE_COLOR
+getLink.BackgroundColor3 = BLUE_COLOR
+getLink.BorderSizePixel = 0
+getLink.TextTransparency = 1
+getLink.Parent = box
+
+local cornerLink = Instance.new("UICorner")
+cornerLink.CornerRadius = UDim.new(0,12)
+cornerLink.Parent = getLink
+
+local function typeWrite(label, text, delayTime)
+    label.Text = ""
+    for i = 1, #text do
+        label.Text = string.sub(text, 1, i)
+        task.wait(delayTime or 0.1)
+    end
+end
+
+local function showKeyPrompt()
+    TweenService:Create(bg,TweenInfo.new(0.4),{BackgroundTransparency=0.4}):Play()
+    TweenService:Create(blur,TweenInfo.new(0.4),{Size=18}):Play()
+    TweenService:Create(box,TweenInfo.new(0.5,Enum.EasingStyle.Back),{BackgroundTransparency=0}):Play()
+    TweenService:Create(stroke,TweenInfo.new(0.5),{Transparency=0}):Play()
+    TweenService:Create(keyTitle,TweenInfo.new(0.5),{TextTransparency=0}):Play()
+    TweenService:Create(keyBox,TweenInfo.new(0.5),{TextTransparency=0}):Play()
+    TweenService:Create(confirm,TweenInfo.new(0.5),{TextTransparency=0}):Play()
+    TweenService:Create(getLink,TweenInfo.new(0.5),{TextTransparency=0}):Play()
+    
+    task.spawn(function()
+        task.wait(0.6)
+        typeWrite(keyTitle, "VOX KEY SYSTEM", 0.08)
+    end)
+end
+
+task.spawn(function()
+    local blink = true
+    local blinkCounter = 0
+    while keyGui and keyGui.Parent do
+        grad.Rotation = grad.Rotation + 4
+        blinkCounter = blinkCounter + 1
+        if blinkCounter >= 15 then
+            blink = not blink
+            keyBox.PlaceholderText = blink and "Key:" or "Key "
+            blinkCounter = 0
+        end
+        task.wait(0.03)
+    end
+end)
+
+local tpMarker = nil
+local tpBillboard = nil
+
+local function createTPVisual(pos)
+    pcall(function()
+        if tpMarker then tpMarker:Destroy() end
+        if tpBillboard then tpBillboard:Destroy() end
+        
+        tpMarker = Instance.new("Part")
+        tpMarker.Name = "VoxTPMarker"
+        tpMarker.Shape = Enum.PartType.Block
+        tpMarker.Size = Vector3.new(0.1, 5, 5)
+        tpMarker.CFrame = pos * CFrame.Angles(0, 0, math.rad(90))
+        tpMarker.Anchored = true
+        tpMarker.CanCollide = false
+        tpMarker.Transparency = 1
+        tpMarker.Parent = workspace
+        
+        local selection = Instance.new("SelectionBox")
+        selection.Adornee = tpMarker
+        selection.LineThickness = 0.25
+        selection.Color3 = Color3.fromRGB(0, 170, 255)
+        selection.SurfaceTransparency = 1
+        selection.AlwaysOnTop = true
+        selection.Parent = tpMarker
+        
+        local circle = Instance.new("Part")
+        circle.Name = "VoxTPCircle"
+        circle.Shape = Enum.PartType.Cylinder
+        circle.Size = Vector3.new(0.05, 4.5, 4.5)
+        circle.CFrame = tpMarker.CFrame
+        circle.Anchored = true
+        circle.CanCollide = false
+        circle.Transparency = 0.5
+        circle.Material = Enum.Material.Neon
+        circle.Color = Color3.fromRGB(0, 170, 255)
+        circle.Parent = tpMarker
+        
+        local highlight = Instance.new("Highlight")
+        highlight.Adornee = circle
+        highlight.FillColor = Color3.fromRGB(0, 170, 255)
+        highlight.OutlineColor = Color3.fromRGB(0, 255, 255)
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = circle
+        
+        tpBillboard = Instance.new("BillboardGui")
+        tpBillboard.Name = "VoxTPDist"
+        tpBillboard.Adornee = tpMarker
+        tpBillboard.Size = UDim2.new(0, 120, 0, 40)
+        tpBillboard.StudsOffset = Vector3.new(0, 4, 0)
+        tpBillboard.AlwaysOnTop = true
+        tpBillboard.Parent = tpMarker
+        
+        local bg = Instance.new("Frame")
+        bg.Size = UDim2.new(1, 0, 1, 0)
+        bg.BackgroundColor3 = Color3.new(0, 0, 0)
+        bg.BackgroundTransparency = 0.5
+        bg.BorderSizePixel = 0
+        bg.Parent = tpBillboard
+        
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = bg
+        
+        local distLabel = Instance.new("TextLabel")
+        distLabel.Size = UDim2.new(1, 0, 1, 0)
+        distLabel.BackgroundTransparency = 1
+        distLabel.Font = Enum.Font.GothamBold
+        distLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+        distLabel.TextSize = 14
+        distLabel.TextStrokeTransparency = 0.5
+        distLabel.Parent = bg
+        
+        task.spawn(function()
+            local rot = 0
+            while tpMarker and tpMarker.Parent do
+                rot = rot + 1.5
+                tpMarker.CFrame = pos * CFrame.Angles(0, 0, math.rad(90)) * CFrame.Angles(math.rad(rot), 0, 0)
+                circle.CFrame = tpMarker.CFrame
+                local char = player.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    local d = (char.HumanoidRootPart.Position - tpMarker.Position).Magnitude
+                    distLabel.Text = "distância: " .. math.floor(d)
+                end
+                task.wait()
+            end
+        end)
+    end)
+end
+
+local function showTPSavedMessage()
+    local msg = Instance.new("TextLabel")
+    msg.Size = UDim2.new(0, 200, 0, 40)
+    msg.Position = UDim2.new(0.5, -100, 0, -50)
+    msg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    msg.Text = "Posição salva!"
+    msg.Font = Enum.Font.GothamBold
+    msg.TextSize = 18
+    msg.TextColor3 = Color3.fromRGB(0, 255, 0)
+    msg.BackgroundTransparency = 1
+    msg.TextTransparency = 1
+    msg.Parent = player.PlayerGui:FindFirstChild("VoxHub") and player.PlayerGui.VoxHub:FindFirstChild("Frame") or player.PlayerGui:FindFirstChildOfClass("ScreenGui"):FindFirstChildOfClass("Frame")
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = msg
+    
+    TweenService:Create(msg, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
+        Position = UDim2.new(0.5, -100, 0, 10),
+        BackgroundTransparency = 0.2,
+        TextTransparency = 0
+    }).Play()
+    
+    task.wait(1.5)
+    
+    local fade = TweenService:Create(msg, TweenInfo.new(0.4), {
+        Position = UDim2.new(0.5, -100, 0, -50),
+        BackgroundTransparency = 1,
+        TextTransparency = 1
+    })
+    fade:Play()
+    fade.Completed:Connect(function() msg:Destroy() end)
+end
+
+local function createHub()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "VoxHub"
+    gui.ResetOnSpawn = false
+    gui.Parent = player.PlayerGui
+    
+    local INSTAGRAM_LINK = "https://www.instagram.com/paopremium15?igsh=MTFqemxsaXE5N3RsMQ=="
+    
+    local function applySpeed(v)
+        local char = player.Character or player.CharacterAdded:Wait()
+        local hum = char:WaitForChild("Humanoid")
+        if hum then hum.WalkSpeed = v end
+    end
+    
+    applySpeed(savedSpeed)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        applySpeed(savedSpeed)
+    end)
+    
+    local main = Instance.new("Frame")
+    local finalSize = UDim2.new(0,230,0,300)
+    main.Size = UDim2.new(0,0,0,0)
+    main.Position = UDim2.new(0.5,0,0.5,0)
+    main.AnchorPoint = Vector2.new(0.5,0.5)
+    main.BackgroundColor3 = Color3.fromRGB(20,20,20)
+    main.BorderSizePixel = 0
+    main.Active = true
+    main.Parent = gui
+    
+    local mainCorner = Instance.new("UICorner")
+    mainCorner.CornerRadius = UDim.new(0,18)
+    mainCorner.Parent = main
+    
+    TweenService:Create(main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = finalSize}):Play()
+    
+    local hubAura = Instance.new("UIStroke")
+    hubAura.Thickness = 4
+    hubAura.Transparency = 0.25
+    hubAura.Parent = main
+    
+    task.spawn(function()
+        while main and main.Parent do
+            TweenService:Create(hubAura,TweenInfo.new(2.5),{Color=WHITE_COLOR}):Play()
+            task.wait(2.5)
+            TweenService:Create(hubAura,TweenInfo.new(2.5),{Color=Color3.new(0,0,0)}):Play()
+            task.wait(2.5)
+        end
+    end)
+    
+    local function createParticles(originX, originY, count, color, sizeMult)
+        sizeMult = sizeMult or 1
+        local container = Instance.new("Frame")
+        container.BackgroundTransparency = 1
+        container.Size = UDim2.new(0, 1, 0, 1)
+        container.Position = UDim2.new(0, originX, 0, originY)
+        container.Parent = main
+        
+        for i = 1, count do
+            local p = Instance.new("Frame")
+            p.Size = UDim2.new(0, math.random(3, 5) * sizeMult, 0, math.random(3, 5) * sizeMult)
+            p.BackgroundColor3 = color
+            p.BorderSizePixel = 0
+            p.AnchorPoint = Vector2.new(0.5, 0.5)
+            p.Position = UDim2.new(0.5, 0, 0.5, 0)
+            p.Parent = container
+            
+            local pc = Instance.new("UICorner")
+            pc.CornerRadius = UDim.new(1, 0)
+            pc.Parent = p
+            
+            local angle = math.random() * 2 * math.pi
+            local dist = math.random(20, 50) * sizeMult
+            local tx = math.cos(angle) * dist
+            local ty = math.sin(angle) * dist
+            
+            TweenService:Create(p, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0.5, tx, 0.5, ty),
+                BackgroundTransparency = 1
+            }):Play()
+        end
+        game:GetService("Debris"):AddItem(container, 0.7)
+    end
+
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1,0,0,42)
+    topBar.BackgroundColor3 = Color3.fromRGB(25,25,25)
+    topBar.BorderSizePixel = 0
+    topBar.Parent = main
+    
+    local topCorner = Instance.new("UICorner")
+    topCorner.CornerRadius = UDim.new(0,18)
+    topCorner.Parent = topBar
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,-80,1,0)
+    title.Position = UDim2.new(0,40,0,0)
+    title.BackgroundTransparency = 1
+    title.Text = "Vox Hub"
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 24
+    title.TextColor3 = WHITE_COLOR
+    title.TextXAlignment = Enum.TextXAlignment.Center
+    title.Parent = topBar
+    
+    local close = Instance.new("TextButton")
+    close.Size = UDim2.new(0,30,0,30)
+    close.Position = UDim2.new(1,-35,0.5,-15)
+    close.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    close.Text = "X"
+    close.Font = Enum.Font.GothamBold
+    close.TextSize = 14
+    close.TextColor3 = WHITE_COLOR
+    close.Parent = topBar
+    close.MouseButton1Click:Connect(function() animateClick(close) end)
+    
+    local cCorner = Instance.new("UICorner")
+    cCorner.CornerRadius = UDim.new(0,8)
+    cCorner.Parent = close
+    
+    local igBtn = Instance.new("TextButton")
+    igBtn.Name = "InstagramButton"
+    igBtn.Size = UDim2.new(0, 30, 0, 30)
+    igBtn.Position = UDim2.new(0, 10, 0.5, -15)
+    igBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+    igBtn.Text = "ig"
+    igBtn.Font = Enum.Font.GothamBold
+    igBtn.TextSize = 14
+    igBtn.TextColor3 = Color3.new(1, 1, 1)
+    igBtn.Parent = topBar
+    igBtn.MouseButton1Click:Connect(function() animateClick(igBtn)
+        setclipboard(INSTAGRAM_LINK)
+        local igCopied = Instance.new("TextLabel")
+        igCopied.Size = UDim2.new(0, 180, 0, 35)
+        igCopied.Position = UDim2.new(0.5, -90, 0, -50)
+        igCopied.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        igCopied.Text = "Link do Instagram copiado!"
+        igCopied.Font = Enum.Font.GothamBold
+        igCopied.TextSize = 14
+        igCopied.TextColor3 = Color3.new(1, 1, 1)
+        igCopied.BackgroundTransparency = 1
+        igCopied.TextTransparency = 1
+        igCopied.Parent = main
+        Instance.new("UICorner", igCopied).CornerRadius = UDim.new(0, 10)
+        TweenService:Create(igCopied, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0.5, -90, 0, 10), BackgroundTransparency = 0.2, TextTransparency = 0}):Play()
+        task.wait(1.5)
+        local fadeOut = TweenService:Create(igCopied, TweenInfo.new(0.4), {Position = UDim2.new(0.5, -90, 0, -50), BackgroundTransparency = 1, TextTransparency = 1})
+        fadeOut:Play()
+        fadeOut.Completed:Connect(function() igCopied:Destroy() end)
+    end)
+    
+    local igCorner = Instance.new("UICorner")
+    igCorner.CornerRadius = UDim.new(1, 0)
+    igCorner.Parent = igBtn
+
+    local speedBox = Instance.new("TextBox")
+    speedBox.Size = UDim2.new(0.58,0,0,34)
+    speedBox.Position = UDim2.new(0.1,0,0,80)
+    speedBox.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    speedBox.PlaceholderText = "Velocidade 0-1000"
+    speedBox.Focused:Connect(function() animateClick(speedBox) end)
+    speedBox.PlaceholderColor3 = Color3.fromRGB(80, 80, 80)
+    speedBox.Text = tostring(savedSpeed)
+    speedBox.Font = Enum.Font.GothamBold
+    speedBox.TextSize = 14
+    speedBox.TextColor3 = WHITE_COLOR
+    speedBox.BorderSizePixel = 0
+    speedBox.Parent = main
+    
+    local resetBtn = Instance.new("TextButton")
+    resetBtn.Size = UDim2.new(0.2,0,0,34)
+    resetBtn.Position = UDim2.new(0.70,0,0,80)
+    resetBtn.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    resetBtn.Text = "🔁"
+    resetBtn.Font = Enum.Font.GothamBold
+    resetBtn.TextSize = 18
+    resetBtn.TextColor3 = WHITE_COLOR
+    resetBtn.BorderSizePixel = 0
+    resetBtn.Parent = main
+    resetBtn.MouseButton1Click:Connect(function() animateClick(resetBtn)
+        savedSpeed = defaultSpeed
+        speedBox.Text = tostring(defaultSpeed)
+        applySpeed(defaultSpeed)
+        saveConfig()
+        resetBtn.Rotation = 0
+        TweenService:Create(resetBtn, TweenInfo.new(0.3,Enum.EasingStyle.Back), {Rotation = 360}).Play()
+    end)
+    
+    Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0,12)
+    Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,12)
+
+    speedBox.FocusLost:Connect(function(e)
+        if e then
+            local n = tonumber(speedBox.Text)
+            if n and n <= 1000 then
+                savedSpeed = n
+                applySpeed(n)
+                saveConfig()
+            end
+        end
+        speedBox.Text = tostring(savedSpeed)
+    end)
+    
+    local function updateButtonColor(button, state)
+        local baseText = string.match(button.Text, "(.+): ") or string.gsub(button.Text, ": .*", "")
+        local newStatus = state and "ON" or "OFF"
+        pcall(function()
+            button.RichText = true
+            local colorHex = state and "#00FF00" or "#FF0000"
+            button.Text = baseText .. ": <font color=\"" .. colorHex .. "\">" .. newStatus .. "</font>"
+        end)
+        createParticles(main.Size.X.Offset / 2, main.Size.Y.Offset / 2, 20, state and GREEN_COLOR or RED_COLOR)
+    end
+    
+    local jumpBtn = Instance.new("TextButton")
+    jumpBtn.Size = UDim2.new(0.8,0,0,34)
+    jumpBtn.Position = UDim2.new(0.1,0,0,118)
+    jumpBtn.Text = "INF PULO: OFF"
+    jumpBtn.Font = Enum.Font.GothamBold
+    jumpBtn.TextSize = 15
+    jumpBtn.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    jumpBtn.TextColor3 = WHITE_COLOR
+    jumpBtn.Parent = main
+    jumpBtn.MouseButton1Click:Connect(function() animateClick(jumpBtn)
+        infJumpEnabled = not infJumpEnabled
+        updateButtonColor(jumpBtn, infJumpEnabled)
+        saveConfig()
+    end)
+    Instance.new("UICorner", jumpBtn).CornerRadius = UDim.new(0,12)
+
+    UIS.JumpRequest:Connect(function()
+        if infJumpEnabled then
+            local char = player.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+            end
+        end
+    end)
+    
+    local noclipBtn = Instance.new("TextButton")
+    noclipBtn.Size = UDim2.new(0.8,0,0,34)
+    noclipBtn.Position = UDim2.new(0.1,0,0,156)
+    noclipBtn.Text = "NOCLIP: OFF"
+    noclipBtn.Font = Enum.Font.GothamBold
+    noclipBtn.TextSize = 15
+    noclipBtn.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    noclipBtn.TextColor3 = WHITE_COLOR
+    noclipBtn.Parent = main
+    noclipBtn.MouseButton1Click:Connect(function() animateClick(noclipBtn)
+        noclipEnabled = not noclipEnabled
+        updateButtonColor(noclipBtn, noclipEnabled)
+        saveConfig()
+        if noclipEnabled then
+            task.spawn(function()
+                while noclipEnabled do
+                    if player.Character then
+                        for _, part in ipairs(player.Character:GetDescendants()) do
+                            if part:IsA("BasePart") then part.CanCollide = false end
+                        end
+                    end
+                    task.wait()
+                end
+            end)
+        end
+    end)
+    Instance.new("UICorner", noclipBtn).CornerRadius = UDim.new(0,12)
+    
+    local espBtn = Instance.new("TextButton")
+    espBtn.Size = UDim2.new(0.8,0,0,34)
+    espBtn.Position = UDim2.new(0.1,0,0,194)
+    espBtn.Text = "ESP: OFF"
+    espBtn.Font = Enum.Font.GothamBold
+    espBtn.TextSize = 15
+    espBtn.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    espBtn.TextColor3 = WHITE_COLOR
+    espBtn.Parent = main
+    espBtn.MouseButton1Click:Connect(function() animateClick(espBtn)
+        espEnabled = not espEnabled
+        updateButtonColor(espBtn, espEnabled)
+        saveConfig()
+    end)
+    Instance.new("UICorner", espBtn).CornerRadius = UDim.new(0,12)
+
+    local tpBtn = Instance.new("TextButton")
+    tpBtn.Size = UDim2.new(0.8,0,0,34)
+    tpBtn.Position = UDim2.new(0.1,0,0,232)
+    tpBtn.Text = "SALVAR POSIÇÃO"
+    tpBtn.Font = Enum.Font.GothamBold
+    tpBtn.TextSize = 15
+    tpBtn.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    tpBtn.TextColor3 = WHITE_COLOR
+    tpBtn.Parent = main
+    
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(0,0,0,34)
+    saveBtn.Position = UDim2.new(0.9,0,0,232)
+    saveBtn.AnchorPoint = Vector2.new(1,0)
+    saveBtn.Text = "P"
+    saveBtn.Font = Enum.Font.GothamBold
+    saveBtn.TextSize = 18
+    saveBtn.BackgroundColor3 = BLUE_COLOR
+    saveBtn.TextColor3 = WHITE_COLOR
+    saveBtn.Visible = false
+    saveBtn.Parent = main
+    
+    tpBtn.MouseButton1Click:Connect(function() animateClick(tpBtn)
+        if tpBtn.Text == "SALVAR POSIÇÃO" then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                savedPos = char.HumanoidRootPart.CFrame
+                pcall(function() createTPVisual(savedPos) end)
+                pcall(function() showTPSavedMessage() end)
+                createParticles(tpBtn.Position.X.Offset + (tpBtn.Size.X.Offset/2), tpBtn.Position.Y.Offset + (tpBtn.Size.Y.Offset/2), 15, GREEN_COLOR)
+                TweenService:Create(tpBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Size = UDim2.new(0.65,0,0,34)}):Play()
+                task.wait(0.1)
+                saveBtn.Visible = true
+                TweenService:Create(saveBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Size = UDim2.new(0.15,0,0,34)}):Play()
+                tpBtn.Text = "TELEPORTE"
+            end
+        elseif tpBtn.Text == "TELEPORTE" and savedPos then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = savedPos
+                createParticles(tpBtn.Position.X.Offset + (tpBtn.Size.X.Offset/2), tpBtn.Position.Y.Offset + (tpBtn.Size.Y.Offset/2), 20, BLUE_COLOR)
+            end
+        end
+    end)
+    
+    saveBtn.MouseButton1Click:Connect(function() animateClick(saveBtn)
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            savedPos = char.HumanoidRootPart.CFrame
+            pcall(function() createTPVisual(savedPos) end)
+            pcall(function() showTPSavedMessage() end)
+            saveBtn.Rotation = 0
+            TweenService:Create(saveBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Rotation = 360}).Play()
+        end
+    end)
+    
+    Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0,12)
+    Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,12)
+
+    local minimized = false
+    local fullSize = finalSize
+    local miniSize = UDim2.new(0,230,0,42)
+    
+    close.MouseButton1Click:Connect(function() animateClick(close)
+        if minimized then return end
+        minimized = true
+        for _, v in ipairs(main:GetChildren()) do
+            if v:IsA("GuiObject") and v ~= topBar then v.Visible = false end
+        end
+        local targetPos = main.Position - UDim2.new(0, 0, 0, (fullSize.Y.Offset - miniSize.Y.Offset) / 2)
+        TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = miniSize, Position = targetPos}):Play()
+    end)
+    
+    topBar.InputEnded:Connect(function(i)
+        if minimized and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+            minimized = false
+            local targetPos = main.Position + UDim2.new(0, 0, 0, (fullSize.Y.Offset - miniSize.Y.Offset) / 2)
+            TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = fullSize, Position = targetPos}):Play()
+            task.wait(0.3)
+            for _, v in ipairs(main:GetChildren()) do
+                if v:IsA("GuiObject") and v ~= topBar then 
+                    if v == saveBtn and tpBtn.Text ~= "TELEPORTE" then v.Visible = false else v.Visible = true end
+                end
+            end
+        end
+    end)
+
+    updateButtonColor(jumpBtn, infJumpEnabled)
+    updateButtonColor(noclipBtn, noclipEnabled)
+    updateButtonColor(espBtn, espEnabled)
+
+    local versionLabel = Instance.new("TextLabel")
+    versionLabel.Size = UDim2.new(0, 50, 0, 20)
+    versionLabel.Position = UDim2.new(1, -55, 1, -22)
+    versionLabel.BackgroundTransparency = 1
+    versionLabel.Text = "V7.0"
+    versionLabel.Font = Enum.Font.GothamBold
+    versionLabel.TextSize = 12
+    versionLabel.TextColor3 = Color3.fromRGB(80, 80, 80)
+    versionLabel.TextXAlignment = Enum.TextXAlignment.Right
+    versionLabel.Parent = main
+    
+    local creditsLabel = Instance.new("TextLabel")
+    creditsLabel.Size = UDim2.new(0, 150, 0, 20)
+    creditsLabel.Position = UDim2.new(0, 10, 1, -22)
+    creditsLabel.BackgroundTransparency = 1
+    creditsLabel.Text = "by: Pou999kaka02"
+    creditsLabel.Font = Enum.Font.GothamBold
+    creditsLabel.TextSize = 12
+    creditsLabel.TextColor3 = Color3.fromRGB(80, 80, 80)
+    creditsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    creditsLabel.Parent = main
+
+    local dragging, dragStart, startPos = false
+    topBar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = i.Position
+            startPos = main.Position
+            TweenService:Create(hubAura,TweenInfo.new(0.15),{Thickness=6}):Play()
+        end
+    end)
+    
+    topBar.InputChanged:Connect(function(i)
+        if dragging then
+            local d = i.Position - dragStart
+            TweenService:Create(main,TweenInfo.new(0.08),{Position = startPos + UDim2.new(0,d.X,0,d.Y)}):Play()
+        end
+    end)
+    
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+            TweenService:Create(hubAura,TweenInfo.new(0.2),{Thickness=4}):Play()
+        end
+    end)
+end
+
+showKeyPrompt()
+getLink.MouseButton1Click:Connect(function() animateClick(getLink)
+    pcall(function()
+        setclipboard("https://link-target.net/2585620/VIVaDTlBVRVn")
+        getLink.Text = "LINK COPIADO!"
+        task.wait(1.5)
+        getLink.Text = "IR PARA KEY"
+    end)
+end)
+
+confirm.MouseButton1Click:Connect(function() animateClick(confirm)
+    if validKeys[keyBox.Text] then
+        TweenService:Create(stroke,TweenInfo.new(0.3),{Color=GREEN_COLOR}):Play()
+        task.wait(0.4)
+        local sI = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+        TweenService:Create(box, sI, {Size = UDim2.new(0,0,0,0)}):Play()
+        TweenService:Create(keyTitle, sI, {TextSize = 0}):Play()
+        task.wait(0.4)
+        keyGui:Destroy()
+        blur:Destroy()
+        createHub()
+    else
+        TweenService:Create(stroke,TweenInfo.new(0.2),{Color=RED_COLOR}).Play()
+        task.wait(0.2)
+        TweenService:Create(stroke,TweenInfo.new(0.3),{Color=WHITE_COLOR}).Play()
+    end
+end)
